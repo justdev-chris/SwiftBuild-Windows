@@ -10,12 +10,12 @@
 - **Customizable** - App name, bundle ID, icons, orientation
 
 ## 🚀 Quick Start
-# 1. Fork this repository
-# 2. Edit App/Sources/Main.swift (your SwiftUI code)
-# 3. Edit config.json (app settings)
-# 4. Push to GitHub
-# 5. Download .ipa from Actions tab
-# 6. Install with AltStore (free sideloading)
+ 1. Fork this repository
+ 2. Edit App/Sources/Main.swift (your SwiftUI code)
+ 3. Edit config.json (app settings)
+ 4. Push to GitHub
+ 5. Download .ipa from Actions tab
+ 6. Install with AltStore (free sideloading)
 
 ## 🎨 Custom App Icon (Optional)
 
