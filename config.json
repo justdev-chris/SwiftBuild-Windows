@@ -1,6 +1,6 @@
 {
-  "app_name": "YourAppName", 
-  "bundle_id": "com.yourname.myapp",
+  "app_name": "MySwiftApp",
+  "bundle_id": "com.justdev-chris.myswiftapp",
   "version": "1.0.0",
   "build_number": "1",
   "minimum_ios": "15.0",
