@@ -1,10 +1,15 @@
 import SwiftUI
 
 struct Message: Identifiable, Codable {
-    let id = UUID()
+    var id = UUID()  // CHANGED: var instead of let
     let user: String
     let text: String
     let timestamp: Date
+    
+    // Add CodingKeys to fix the warning
+    enum CodingKeys: String, CodingKey {
+        case id, user, text, timestamp
+    }
 }
 
 struct MessageBubble: View {
@@ -17,38 +22,31 @@ struct MessageBubble: View {
                 Spacer()
                 VStack(alignment: .trailing, spacing: 4) {
                     Text("You")
-                        .font(.caption2)
+                        .font(.caption)
                         .foregroundColor(.gray)
                     Text(message.text)
-                        .padding(10)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
                         .background(Color.blue)
                         .foregroundColor(.white)
-                        .cornerRadius(15)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 15)
-                                .stroke(Color.blue.opacity(0.3), lineWidth: 1)
-                        )
+                        .cornerRadius(18)
                 }
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(message.user)
-                        .font(.caption2)
+                        .font(.caption)
                         .foregroundColor(.gray)
                     Text(message.text)
-                        .padding(10)
-                        .background(Color.gray.opacity(0.2))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.gray.opacity(0.1))
                         .foregroundColor(.primary)
-                        .cornerRadius(15)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 15)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                        )
+                        .cornerRadius(18)
                 }
                 Spacer()
             }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 4)
     }
 }
 
@@ -61,14 +59,55 @@ struct TempleChatApp: App {
     }
 }
 
+class WebSocketManager: ObservableObject {
+    @Published var isConnected = false
+    @Published var connectionError: String?
+    private var socket: URLSessionWebSocketTask?
+    
+    func connect(to urlString: String) {
+        guard let url = URL(string: urlString) else {
+            connectionError = "Invalid URL"
+            return
+        }
+        
+        let request = URLRequest(url: url)
+        socket = URLSession.shared.webSocketTask(with: request)
+        socket?.resume()
+        isConnected = true
+        connectionError = nil
+    }
+    
+    func disconnect() {
+        socket?.cancel(with: .goingAway, reason: nil)
+        isConnected = false
+    }
+    
+    func send(_ message: String, completion: @escaping (Error?) -> Void) {
+        socket?.send(.string(message), completionHandler: completion)
+    }
+    
+    func receive(completion: @escaping (Result<String, Error>) -> Void) {
+        socket?.receive { result in
+            switch result {
+            case .success(let message):
+                if case .string(let text) = message {
+                    completion(.success(text))
+                } else {
+                    completion(.failure(NSError(domain: "WebSocket", code: 0)))
+                }
+            case .failure(let error):
+                completion(.failure(error))
+            }
+        }
+    }
+}
+
 struct ChatView: View {
+    @StateObject private var socketManager = WebSocketManager()
     @State private var messages: [Message] = []
     @State private var newMessage = ""
     @State private var username = "Anon"
     @State private var showUsernamePrompt = true
-    @State private var socket: URLSessionWebSocketTask?
-    @State private var isConnected = false
-    @State private var connectionError: String?
     
     var body: some View {
         NavigationView {
@@ -84,9 +123,9 @@ struct ChatView: View {
                     // Connection status
                     HStack(spacing: 6) {
                         Circle()
-                            .fill(isConnected ? Color.green : Color.red)
+                            .fill(socketManager.isConnected ? Color.green : Color.red)
                             .frame(width: 8, height: 8)
-                        Text(isConnected ? "Connected" : "Disconnected")
+                        Text(socketManager.isConnected ? "Connected" : "Disconnected")
                             .font(.caption)
                             .foregroundColor(.gray)
                     }
@@ -95,7 +134,7 @@ struct ChatView: View {
                 .padding(.vertical, 12)
                 .background(Color(.systemGray6))
                 
-                // Messages area
+                // Messages
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 12) {
@@ -107,25 +146,24 @@ struct ChatView: View {
                         .padding()
                     }
                     .onChange(of: messages.count) { _ in
-                        if let lastMessage = messages.last {
-                            withAnimation(.easeOut(duration: 0.3)) {
-                                proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                        if let last = messages.last {
+                            withAnimation {
+                                proxy.scrollTo(last.id, anchor: .bottom)
                             }
                         }
                     }
                 }
                 .background(Color(.systemBackground))
                 
-                // Connection error banner
-                if let error = connectionError {
+                // Connection error
+                if let error = socketManager.connectionError {
                     HStack {
                         Image(systemName: "exclamationmark.triangle")
                         Text(error)
                             .font(.caption)
                         Spacer()
                         Button("Retry") {
-                            connectionError = nil
-                            connectWebSocket()
+                            socketManager.connect(to: "wss://temple-chat-backend.onrender.com/ws")
                         }
                         .font(.caption)
                     }
@@ -134,31 +172,25 @@ struct ChatView: View {
                     .foregroundColor(.orange)
                 }
                 
-                // Input area
+                // Input
                 VStack(spacing: 0) {
                     Divider()
                     HStack(spacing: 12) {
-                        TextField("Type a message...", text: $newMessage)
-                            .textFieldStyle(PlainTextFieldStyle())
-                            .padding(12)
-                            .background(Color(.systemGray6))
-                            .cornerRadius(20)
+                        TextField("Message...", text: $newMessage)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
                             .onSubmit {
-                                if !newMessage.isEmpty && isConnected {
-                                    sendMessage()
-                                }
+                                sendMessage()
                             }
                         
                         Button(action: sendMessage) {
                             Image(systemName: "paperplane.fill")
-                                .font(.system(size: 18, weight: .medium))
+                                .font(.system(size: 18))
                                 .frame(width: 44, height: 44)
-                                .background(isConnected && !newMessage.isEmpty ? Color.blue : Color.gray)
+                                .background(newMessage.isEmpty ? Color.gray : Color.blue)
                                 .foregroundColor(.white)
                                 .clipShape(Circle())
                         }
-                        .disabled(newMessage.isEmpty || !isConnected)
-                        .animation(.easeInOut(duration: 0.2), value: newMessage.isEmpty || !isConnected)
+                        .disabled(newMessage.isEmpty || !socketManager.isConnected)
                     }
                     .padding(.horizontal)
                     .padding(.vertical, 12)
@@ -167,85 +199,41 @@ struct ChatView: View {
             }
             .navigationBarHidden(true)
         }
-        .navigationViewStyle(StackNavigationViewStyle())
-        .onAppear(perform: connectWebSocket)
-        .alert("Enter Your Name", isPresented: $showUsernamePrompt) {
-            TextField("Username", text: $username)
-            Button("Continue") {
-                showUsernamePrompt = false
-                if username.trimmingCharacters(in: .whitespaces).isEmpty {
-                    username = "Anon"
-                }
-            }
-        } message: {
-            Text("Choose a name to use in the chat.")
+        .onAppear {
+            socketManager.connect(to: "wss://temple-chat-backend.onrender.com/ws")
+            startReceiving()
         }
         .onDisappear {
-            socket?.cancel(with: .goingAway, reason: nil)
+            socketManager.disconnect()
+        }
+        .alert("Enter Name", isPresented: $showUsernamePrompt) {
+            TextField("Username", text: $username)
+            Button("OK") {
+                showUsernamePrompt = false
+            }
         }
     }
     
-    // MARK: - WebSocket Functions
-    
-    private func connectWebSocket() {
-        guard let url = URL(string: "wss://temple-chat-backend.onrender.com/ws") else {
-            connectionError = "Invalid server URL"
-            return
-        }
+    private func startReceiving() {
+        guard socketManager.isConnected else { return }
         
-        let request = URLRequest(url: url)
-        socket = URLSession.shared.webSocketTask(with: request)
-        socket?.resume()
-        
-        DispatchQueue.main.async {
-            self.isConnected = true
-            self.connectionError = nil
-        }
-        
-        receiveMessages()
-        print("WebSocket connected to: \(url)")
-    }
-    
-    private func receiveMessages() {
-        socket?.receive { [weak self] result in
+        socketManager.receive { [weak self] result in
             guard let self = self else { return }
             
             switch result {
-            case .success(let message):
-                switch message {
-                case .string(let text):
-                    print("Received message: \(text)")
-                    if let data = text.data(using: .utf8) {
-                        do {
-                            let decoder = JSONDecoder()
-                            decoder.dateDecodingStrategy = .iso8601
-                            let msg = try decoder.decode(Message.self, from: data)
-                            DispatchQueue.main.async {
-                                self.messages.append(msg)
-                            }
-                        } catch {
-                            print("Failed to decode message: \(error)")
-                        }
+            case .success(let text):
+                if let data = text.data(using: .utf8),
+                   let message = try? JSONDecoder().decode(Message.self, from: data) {
+                    DispatchQueue.main.async {
+                        self.messages.append(message)
                     }
-                case .data(let data):
-                    print("Received binary data: \(data.count) bytes")
-                @unknown default:
-                    break
                 }
                 // Continue listening
-                self.receiveMessages()
+                self.startReceiving()
                 
-            case .failure(let error):
-                print("WebSocket error: \(error)")
-                DispatchQueue.main.async {
-                    self.isConnected = false
-                    self.connectionError = "Connection lost. Tap Retry to reconnect."
-                }
-                // Auto-reconnect after 5 seconds
-                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                    if !self.isConnected {
-                        self.connectWebSocket()
-                    }
+            case .failure:
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    self.startReceiving()
                 }
             }
         }
@@ -253,56 +241,34 @@ struct ChatView: View {
     
     private func sendMessage() {
         let messageText = newMessage.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !messageText.isEmpty, isConnected, let socket = socket else {
-            return
-        }
+        guard !messageText.isEmpty, socketManager.isConnected else { return }
         
-        // Clear input immediately
-        newMessage = ""
-        
-        let msg = Message(
+        let message = Message(
             user: username,
             text: messageText,
             timestamp: Date()
         )
         
-        // Optimistic UI update
-        let optimisticMessage = msg
-        DispatchQueue.main.async {
-            self.messages.append(optimisticMessage)
-        }
+        // Clear input
+        newMessage = ""
         
+        // Optimistic update
+        messages.append(message)
+        
+        // Send via WebSocket
         do {
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
-            let jsonData = try encoder.encode(msg)
-            guard let jsonString = String(data: jsonData, encoding: .utf8) else {
-                throw NSError(domain: "EncodingError", code: 1, userInfo: nil)
-            }
+            let jsonData = try encoder.encode(message)
+            guard let jsonString = String(data: jsonData, encoding: .utf8) else { return }
             
-            socket.send(.string(jsonString)) { [weak self] error in
-                DispatchQueue.main.async {
-                    if let error = error {
-                        print("Failed to send message: \(error)")
-                        // Remove optimistic message on failure
-                        self?.messages.removeAll { $0.id == optimisticMessage.id }
-                        self?.newMessage = messageText // Restore message for retry
-                        self?.connectionError = "Send failed. Tap to retry."
-                    }
+            socketManager.send(jsonString) { error in
+                if let error = error {
+                    print("Send failed: \(error)")
                 }
             }
         } catch {
-            print("Failed to encode message: \(error)")
-            // Remove optimistic message
-            messages.removeAll { $0.id == optimisticMessage.id }
-            newMessage = messageText // Restore message
+            print("Encode failed: \(error)")
         }
-    }
-}
-
-// Preview for Xcode
-struct ChatView_Previews: PreviewProvider {
-    static var previews: some View {
-        ChatView()
     }
 }
