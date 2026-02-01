@@ -2,23 +2,41 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Basic Info -->
+    <!-- === CRITICAL FIXES === -->
+    
+    <!-- 1. APP EXECUTABLE NAME (NO SPECIAL CHARS) -->
+    <key>CFBundleExecutable</key>
+    <string>{{APP_EXECUTABLE_NAME}}</string>  <!-- MUST: No spaces, apostrophes, special chars -->
+    
+    <!-- 2. APP DISPLAY NAME (can have spaces) -->
     <key>CFBundleName</key>
     <string>{{APP_NAME}}</string>
     
     <key>CFBundleDisplayName</key>
     <string>{{APP_NAME}}</string>
     
+    <!-- 3. BUNDLE ID (NO RANDOM SUFFIX) -->
     <key>CFBundleIdentifier</key>
-    <string>{{BUNDLE_ID}}</string>
+    <string>{{BUNDLE_ID}}</string>  <!-- MUST: Exact match with provisioning profile -->
     
+    <!-- 4. VERSION INFO -->
     <key>CFBundleVersion</key>
     <string>{{BUILD_NUMBER}}</string>
     
     <key>CFBundleShortVersionString</key>
     <string>{{VERSION}}</string>
     
-    <!-- iOS Requirements -->
+    <!-- === REQUIRED KEYS (iOS validation) === -->
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    
+    <!-- === iOS REQUIREMENTS === -->
     <key>LSRequiresIPhoneOS</key>
     <true/>
     
@@ -31,7 +49,13 @@
         <integer>2</integer> <!-- iPad -->
     </array>
     
-    <!-- App Capabilities -->
+    <!-- CPU Architecture (REQUIRED for OTA) -->
+    <key>UIRequiredDeviceCapabilities</key>
+    <array>
+        <string>arm64</string>
+    </array>
+    
+    <!-- === ORIENTATION SETTINGS === -->
     <key>UISupportedInterfaceOrientations</key>
     <array>
         {{ORIENTATION_PORTRAIT}}
@@ -44,18 +68,17 @@
         {{ORIENTATION_LANDSCAPE}}
     </array>
     
-    <!-- Launch Screen (SwiftUI) -->
+    <!-- === LAUNCH SETTINGS === -->
+    <!-- SwiftUI Launch Screen -->
     <key>UILaunchScreen</key>
     <dict>
         <key>UIColorName</key>
         <string>SystemBackgroundColor</string>
     </dict>
     
-    <!-- No Storyboard -->
-    <key>UIMainStoryboardFile</key>
-    <string></string>
+    <!-- REMOVED: UIMainStoryboardFile (not needed for SwiftUI) -->
     
-    <!-- SwiftUI Entry -->
+    <!-- === SwiftUI ENTRY POINT === -->
     <key>UIApplicationSceneManifest</key>
     <dict>
         <key>UIApplicationSupportsMultipleScenes</key>
@@ -74,11 +97,19 @@
         </dict>
     </dict>
     
-    <!-- Privacy (minimal) -->
+    <!-- === PRIVACY SETTINGS (Optional) === -->
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsArbitraryLoads</key>
         <true/>
     </dict>
+    
+    <!-- === REMOVED: Problematic Keys === -->
+    <!-- 
+    DO NOT INCLUDE:
+    - ALTBundleIdentifier (AltStore-specific, breaks OTA)
+    - Any keys with random suffixes in bundle ID
+    - CFBundleExecutable with spaces/apostrophes
+    -->
 </dict>
 </plist>
