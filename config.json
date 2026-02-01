@@ -1,8 +1,32 @@
 {
-  "app_name": "Epstein's Temple", 
+  "app_name": "Epstein's Temple",
+  "app_executable_name": "EpsteinsTemple",
   "bundle_id": "com.nword.etc",
   "version": "1.0.0",
   "build_number": "1",
   "minimum_ios": "15.0",
-  "orientation": "portrait"
+  "orientation": "portrait",
+  
+  // Architecture & Platform
+  "architectures": ["arm64"],
+  "device_family": ["iphone", "ipad"],
+  "package_type": "APPL",
+  "development_region": "en",
+  
+  // Orientation Settings
+  "supported_orientations": {
+    "iphone": ["portrait"],
+    "ipad": ["portrait", "landscape"]
+  },
+  
+  // App Behavior
+  "uses_swiftui": true,
+  "scene_delegate_class": "$(PRODUCT_MODULE_NAME).SceneDelegate",
+  
+  // Privacy & Network
+  "allow_arbitrary_loads": true,
+  
+  // Build Flags (for your build system)
+  "enable_debug": false,
+  "optimization_level": "size"
 }
