@@ -32,124 +32,125 @@ jobs:
           VERSION=$(jq -r '.version' config.json)
           BUILD_NUM=$(jq -r '.build_number' config.json)
           MIN_IOS=$(jq -r '.minimum_ios' config.json)
-          ORIENTATION=$(jq -r '.orientation' config.json)
-          
-          # Convert orientation to Xcode format
-          if [ "$ORIENTATION" = "portrait" ]; then
-              ORIENTATION_JSON='["UIInterfaceOrientationPortrait"]'
-          elif [ "$ORIENTATION" = "landscape" ]; then
-              ORIENTATION_JSON='["UIInterfaceOrientationLandscapeLeft", "UIInterfaceOrientationLandscapeRight"]'
-          else
-              ORIENTATION_JSON='["UIInterfaceOrientationPortrait", "UIInterfaceOrientationLandscapeLeft", "UIInterfaceOrientationLandscapeRight"]'
-          fi
           
           echo "APP_NAME=$APP_NAME" >> $GITHUB_OUTPUT
           echo "BUNDLE_ID=$BUNDLE_ID" >> $GITHUB_OUTPUT
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "BUILD_NUM=$BUILD_NUM" >> $GITHUB_OUTPUT
           echo "MIN_IOS=$MIN_IOS" >> $GITHUB_OUTPUT
-          echo "ORIENTATION_JSON=$ORIENTATION_JSON" >> $GITHUB_OUTPUT
           
-      - name: Setup Resources
-        run: |
-          echo "Setting up resources..."
-          mkdir -p App/Resources
-          # Copy custom icon if provided
-          if [ -f "Resources/Assets.xcassets/AppIcon.appiconset/icon-1024.png" ]; then
-            cp -r Resources/ App/Resources/
-            echo "✓ Using custom icon"
-          else
-            echo "✓ Using default icon"
-          fi
-          
-      - name: Generate Info.plist
+      - name: Generate Info.plist from scratch
+        env:
+          APP_NAME: ${{ steps.config.outputs.APP_NAME }}
+          BUNDLE_ID: ${{ steps.config.outputs.BUNDLE_ID }}
+          VERSION: ${{ steps.config.outputs.VERSION }}
+          BUILD_NUM: ${{ steps.config.outputs.BUILD_NUM }}
+          MIN_IOS: ${{ steps.config.outputs.MIN_IOS }}
         run: |
           echo "Generating Info.plist..."
-          
-          # Set orientation strings
-          if [ "${{ steps.config.outputs.ORIENTATION_JSON }}" = '["UIInterfaceOrientationPortrait"]' ]; then
-              PORTRAIT="<string>UIInterfaceOrientationPortrait</string>"
-              LANDSCAPE=""
-          elif [ "${{ steps.config.outputs.ORIENTATION_JSON }}" = '["UIInterfaceOrientationLandscapeLeft", "UIInterfaceOrientationLandscapeRight"]' ]; then
-              PORTRAIT=""
-              LANDSCAPE="<string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string>"
-          else
-              PORTRAIT="<string>UIInterfaceOrientationPortrait</string>"
-              LANDSCAPE="<string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string>"
-          fi
-          
-          # Escape for sed
-          PORTRAIT_ESC=$(echo "$PORTRAIT" | sed 's/[\/&]/\\&/g')
-          LANDSCAPE_ESC=$(echo "$LANDSCAPE" | sed 's/[\/&]/\\&/g')
-          
-          sed -e "s/{{APP_NAME}}/${{ steps.config.outputs.APP_NAME }}/g" \
-              -e "s/{{BUNDLE_ID}}/${{ steps.config.outputs.BUNDLE_ID }}/g" \
-              -e "s/{{VERSION}}/${{ steps.config.outputs.VERSION }}/g" \
-              -e "s/{{BUILD_NUMBER}}/${{ steps.config.outputs.BUILD_NUM }}/g" \
-              -e "s/{{MINIMUM_IOS}}/${{ steps.config.outputs.MIN_IOS }}/g" \
-              -e "s/{{ORIENTATION_PORTRAIT}}/$PORTRAIT_ESC/g" \
-              -e "s/{{ORIENTATION_LANDSCAPE}}/$LANDSCAPE_ESC/g" \
-              App/Info.plist.template > App/Info.plist
-          
+          cat > App/Info.plist << EOF
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0">
+            <dict>
+                <key>CFBundleDevelopmentRegion</key>
+                <string>en</string>
+                <key>CFBundleExecutable</key>
+                <string>${APP_NAME}</string>
+                <key>CFBundleIdentifier</key>
+                <string>${BUNDLE_ID}</string>
+                <key>CFBundleInfoDictionaryVersion</key>
+                <string>6.0</string>
+                <key>CFBundleName</key>
+                <string>${APP_NAME}</string>
+                <key>CFBundlePackageType</key>
+                <string>APPL</string>
+                <key>CFBundleShortVersionString</key>
+                <string>${VERSION}</string>
+                <key>CFBundleVersion</key>
+                <string>${BUILD_NUM}</string>
+                <key>LSRequiresIPhoneOS</key>
+                <true/>
+                <key>MinimumOSVersion</key>
+                <string>${MIN_IOS}</string>
+                <key>UIDeviceFamily</key>
+                <array>
+                    <integer>1</integer>
+                    <integer>2</integer>
+                </array>
+                <key>UILaunchScreen</key>
+                <dict/>
+                <key>UIRequiredDeviceCapabilities</key>
+                <array>
+                    <string>arm64</string>
+                </array>
+                <key>UISupportedInterfaceOrientations~iphone</key>
+                <array>
+                    <string>UIInterfaceOrientationPortrait</string>
+                </array>
+                <key>UISupportedInterfaceOrientations~ipad</key>
+                <array>
+                    <string>UIInterfaceOrientationPortrait</string>
+                    <string>UIInterfaceOrientationLandscapeLeft</string>
+                    <string>UIInterfaceOrientationLandscapeRight</string>
+                </array>
+            </dict>
+            </plist>
+          EOF
           echo "✅ Info.plist generated"
           
-      - name: Create Xcode Project
+      - name: Create project.yml for xcodegen
         run: |
           cd App
-          
-          # Create project.yml for xcodegen
           cat > project.yml << EOF
-          name: ${{ steps.config.outputs.APP_NAME }}
-          options:
-            bundleIdPrefix: ${{ steps.config.outputs.BUNDLE_ID }}
-            deploymentTarget:
-              iOS: ${{ steps.config.outputs.MIN_IOS }}
-          targets:
-            ${{ steps.config.outputs.APP_NAME }}:
-              type: application
-              platform: iOS
-              sources: 
-                - path: Sources
-              info:
-                path: Info.plist
-              settings:
-                base:
-                  PRODUCT_BUNDLE_IDENTIFIER: ${{ steps.config.outputs.BUNDLE_ID }}
-                  PRODUCT_NAME: ${{ steps.config.outputs.APP_NAME }}
-                  TARGETED_DEVICE_FAMILY: 1,2
-                  CODE_SIGNING_ALLOWED: NO
+            name: ${{ steps.config.outputs.APP_NAME }}
+            options:
+              bundleIdPrefix: ${{ steps.config.outputs.BUNDLE_ID }}
+              deploymentTarget:
+                iOS: ${{ steps.config.outputs.MIN_IOS }}
+            targets:
+              ${{ steps.config.outputs.APP_NAME }}:
+                type: application
+                platform: iOS
+                sources: 
+                  - path: Sources
+                info:
+                  path: Info.plist
+                settings:
+                  base:
+                    PRODUCT_BUNDLE_IDENTIFIER: ${{ steps.config.outputs.BUNDLE_ID }}
+                    PRODUCT_NAME: ${{ steps.config.outputs.APP_NAME }}
+                    TARGETED_DEVICE_FAMILY: "1,2"
+                    CODE_SIGNING_ALLOWED: NO
+                    INFOPLIST_OUTPUT_FORMAT: xml
           EOF
           
-          # Generate Xcode project
+      - name: Generate Xcode project
+        run: |
+          cd App
           xcodegen generate
           echo "✅ Xcode project generated"
           
       - name: Build with xcodebuild
         run: |
           cd App
-          
-          # Build with explicit output path
-          xcodebuild -scheme "${{ steps.config.outputs.APP_NAME }}" \
+          xcodebuild -project "${{ steps.config.outputs.APP_NAME }}.xcodeproj" \
+                     -scheme "${{ steps.config.outputs.APP_NAME }}" \
                      -destination 'generic/platform=iOS' \
                      -configuration Release \
                      CODE_SIGN_IDENTITY="" \
                      CODE_SIGNING_ALLOWED=NO \
                      CODE_SIGNING_REQUIRED=NO \
                      -derivedDataPath Build \
-                     clean build \
-                     -quiet
-          
-          echo "✅ Build complete"
+                     clean build
           
       - name: Find Built App
         run: |
           cd App
           
-          # Look for .app in build directory
           APP_PATH=$(find "Build/Build/Products/Release-iphoneos" -name "*.app" -type d 2>/dev/null | head -1)
           
           if [ -z "$APP_PATH" ]; then
-            # Fallback search
             APP_PATH=$(find . -name "*.app" -type d | head -1)
           fi
           
@@ -158,26 +159,19 @@ jobs:
             cp -r "$APP_PATH" "../${{ steps.config.outputs.APP_NAME }}.app"
           else
             echo "❌ No .app found!"
-            echo "Build directory contents:"
-            find Build -type f 2>/dev/null | head -20
             exit 1
           fi
           
-      - name: Create Standard .ipa
+      - name: Create unsigned .ipa
         run: |
-          # Standard .ipa with Payload/ folder (for AltStore)
           mkdir -p Payload
-          mv "${{ steps.config.outputs.APP_NAME }}.app" Payload/
-          zip -qr "${{ steps.config.outputs.APP_NAME }}.ipa" Payload
-          echo "✅ Standard .ipa created (for AltStore)"
+          cp -r "${{ steps.config.outputs.APP_NAME }}.app" Payload/
+          zip -qr "${{ steps.config.outputs.APP_NAME }}-unsigned.ipa" Payload
           
-      - name: Create Appetize .zip
+      - name: Run custom signer
         run: |
-          # Appetize format: .app directly in zip
-          cp -r "Payload/${{ steps.config.outputs.APP_NAME }}.app" ./
-          zip -qr "${{ steps.config.outputs.APP_NAME }}-appetize.zip" \
-               "${{ steps.config.outputs.APP_NAME }}.app"
-          echo "✅ Appetize .zip created (for browser testing)"
+          python3 signer.py "${{ steps.config.outputs.APP_NAME }}-unsigned.ipa" -o "${{ steps.config.outputs.APP_NAME }}.ipa"
+          
           
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
@@ -186,18 +180,4 @@ jobs:
           path: |
             *.ipa
             *-appetize.zip
-            Payload/
           retention-days: 7
-          
-      - name: Show Success
-        run: |
-          echo "🎉 BUILD SUCCESSFUL!"
-          echo "App: ${{ steps.config.outputs.APP_NAME }}"
-          echo "Bundle ID: ${{ steps.config.outputs.BUNDLE_ID }}"
-          echo "Version: ${{ steps.config.outputs.VERSION }} (${{ steps.config.outputs.BUILD_NUM }})"
-          echo ""
-          echo "📱 DOWNLOADS:"
-          echo "- ${{ steps.config.outputs.APP_NAME }}.ipa → Install with AltStore"
-          echo "- ${{ steps.config.outputs.APP_NAME }}-appetize.zip → Upload to Appetize.io"
-          echo ""
-          echo "✅ Ready for testing!"

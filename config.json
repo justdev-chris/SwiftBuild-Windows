@@ -1,7 +1,7 @@
 {
-  "app_name": "Epstein's Temple",
-  "app_executable_name": "EpsteinsTemple",
-  "bundle_id": "com.nword.etc",
+  "app_name": "NekoDNS",
+  "app_executable_name": "NekoDNS",
+  "bundle_id": "com.justdev-chris.NekoDNS",
   "version": "1.0.0",
   "build_number": "1",
   "minimum_ios": "15.0",
@@ -20,10 +20,8 @@
   "uses_swiftui": true,
   "scene_delegate_class": "$(PRODUCT_MODULE_NAME).SceneDelegate",
   
-
   "allow_arbitrary_loads": true,
   
-
   "enable_debug": false,
   "optimization_level": "size"
 }

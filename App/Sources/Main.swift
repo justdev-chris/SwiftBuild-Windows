@@ -1,266 +1,226 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
-struct Message: Identifiable, Codable {
+struct RevokeDomain: Identifiable, Codable {
     var id = UUID()
-    let user: String
-    let text: String
-    let timestamp: Date
+    let domain: String
+    var isEnabled: Bool
+}
+
+class AntiRevokeManager: ObservableObject {
+    @Published var isEnabled = false
+    @Published var domains: [RevokeDomain] = [
+        RevokeDomain(domain: "ocsp.apple.com", isEnabled: true),
+        RevokeDomain(domain: "ocsp2.apple.com", isEnabled: true),
+        RevokeDomain(domain: "crl.apple.com", isEnabled: true),
+        RevokeDomain(domain: "crl.entrust.net", isEnabled: true),
+        RevokeDomain(domain: "crl3.digicert.com", isEnabled: true),
+        RevokeDomain(domain: "crl4.digicert.com", isEnabled: true),
+        RevokeDomain(domain: "ocsp.digicert.com", isEnabled: true),
+        RevokeDomain(domain: "ocsp.entrust.net", isEnabled: true),
+        RevokeDomain(domain: "valid.apple.com", isEnabled: true),
+        RevokeDomain(domain: "gdmf.apple.com", isEnabled: true),
+        RevokeDomain(domain: "mesu.apple.com", isEnabled: true),
+        RevokeDomain(domain: "xp.apple.com", isEnabled: true)
+    ]
     
-    enum CodingKeys: String, CodingKey {
-        case id, user, text, timestamp
+    func generateProfile() -> URL {
+        let fileManager = FileManager.default
+        let docsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let profileURL = docsURL.appendingPathComponent("antirevoke.mobileconfig")
+        
+        let enabledDomains = domains.filter { $0.isEnabled }.map { $0.domain }
+        
+        let domainStrings = enabledDomains.map { "<string>\($0)</string>" }.joined(separator: "\n                            ")
+        
+        let profileContent = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>PayloadContent</key>
+            <array>
+                <dict>
+                    <key>PayloadDescription</key>
+                    <string>Blocks Apple revocation servers</string>
+                    <key>PayloadDisplayName</key>
+                    <string>Anti-Revoke DNS</string>
+                    <key>PayloadIdentifier</key>
+                    <string>com.justdev-chris.antirevoke.dns</string>
+                    <key>PayloadType</key>
+                    <string>com.apple.dnsSettings.managed</string>
+                    <key>PayloadUUID</key>
+                    <string>\(UUID().uuidString)</string>
+                    <key>PayloadVersion</key>
+                    <integer>1</integer>
+                    <key>DNSSettings</key>
+                    <dict>
+                        <key>DNSProtocol</key>
+                        <string>HTTPS</string>
+                        <key>ServerURL</key>
+                        <string>https://dns.adguard.com/dns-query</string>
+                        <key>ServerAddresses</key>
+                        <array>
+                            <string>94.140.14.14</string>
+                            <string>94.140.15.15</string>
+                        </array>
+                        <key>SupplementalMatchDomains</key>
+                        <array>
+                            \(domainStrings)
+                        </array>
+                    </dict>
+                </dict>
+            </array>
+            <key>PayloadDescription</key>
+            <string>Blocks Apple OCSP and revocation servers to prevent app revokes</string>
+            <key>PayloadDisplayName</key>
+            <string>Anti-Revoke</string>
+            <key>PayloadIdentifier</key>
+            <string>com.justdev-chris.antirevoke</string>
+            <key>PayloadRemovalDisallowed</key>
+            <false/>
+            <key>PayloadType</key>
+            <string>Configuration</string>
+            <key>PayloadUUID</key>
+            <string>\(UUID().uuidString)</string>
+            <key>PayloadVersion</key>
+            <integer>1</integer>
+        </dict>
+        </plist>
+        """
+        
+        try? profileContent.write(to: profileURL, atomically: true, encoding: .utf8)
+        return profileURL
+    }
+    
+    func installProfile() {
+        let profileURL = generateProfile()
+        
+        let activityVC = UIActivityViewController(
+            activityItems: [profileURL],
+            applicationActivities: nil
+        )
+        
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootVC = windowScene.windows.first?.rootViewController {
+            rootVC.present(activityVC, animated: true)
+        }
     }
 }
 
-struct MessageBubble: View {
-    let message: Message
-    let isCurrentUser: Bool
+struct DashboardView: View {
+    @ObservedObject var manager: AntiRevokeManager
     
     var body: some View {
-        HStack {
-            if isCurrentUser {
-                Spacer()
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text("You")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    Text(message.text)
-                        .padding(.horizontal, 12)
+        NavigationView {
+            List {
+                Section {
+                    Button(action: {
+                        manager.installProfile()
+                    }) {
+                        HStack {
+                            Image(systemName: "shield.fill")
+                                .foregroundColor(.blue)
+                            Text("Generate & Install Profile")
+                                .font(.headline)
+                        }
+                        .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
-                        .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(18)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.blue)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+                } footer: {
+                    Text("This will create a configuration profile that blocks Apple revocation servers. Install it in Settings app.")
                 }
-            } else {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(message.user)
+                
+                Section("Status") {
+                    let enabledCount = manager.domains.filter { $0.isEnabled }.count
+                    HStack {
+                        Text("Blocked domains")
+                        Spacer()
+                        Text("\(enabledCount)/\(manager.domains.count)")
+                            .foregroundColor(enabledCount > 0 ? .green : .red)
+                    }
+                }
+                
+                Section("How it works") {
+                    Text("The profile configures DNS to block Apple's OCSP servers, preventing app revocation checks.")
                         .font(.caption)
-                        .foregroundColor(.gray)
-                    Text(message.text)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.gray.opacity(0.1))
-                        .foregroundColor(.primary)
-                        .cornerRadius(18)
+                    
+                    Text("No VPN or extension needed - just DNS settings")
+                        .font(.caption)
+                        .foregroundColor(.green)
                 }
-                Spacer()
+                
+                Section("Instructions") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("1. Tap 'Generate & Install Profile'", systemImage: "1.circle")
+                        Label("2. Share to yourself (AirDrop/Mail)", systemImage: "2.circle")
+                        Label("3. Open on this device", systemImage: "3.circle")
+                        Label("4. Go to Settings → Profile Downloaded", systemImage: "4.circle")
+                        Label("5. Tap Install", systemImage: "5.circle")
+                    }
+                    .font(.caption)
+                }
             }
+            .navigationTitle("Anti-Revoke")
         }
-        .padding(.horizontal, 8)
+    }
+}
+
+struct DomainsView: View {
+    @ObservedObject var manager: AntiRevokeManager
+    
+    var body: some View {
+        NavigationView {
+            List {
+                Section {
+                    ForEach($manager.domains) { $domain in
+                        HStack {
+                            Image(systemName: "lock.shield")
+                                .foregroundColor(domain.isEnabled ? .green : .gray)
+                            Text(domain.domain)
+                                .font(.system(.body, design: .monospaced))
+                            Spacer()
+                            Toggle("", isOn: $domain.isEnabled)
+                                .labelsHidden()
+                        }
+                    }
+                } header: {
+                    Text("Blocked Domains")
+                } footer: {
+                    Text("Toggle domains on/off. Only enabled domains are blocked when profile is installed.")
+                }
+            }
+            .navigationTitle("Blocklist")
+        }
+    }
+}
+
+struct ContentView: View {
+    @StateObject private var manager = AntiRevokeManager()
+    @State private var selectedTab = 0
+    
+    var body: some View {
+        TabView(selection: $selectedTab) {
+            DashboardView(manager: manager)
+                .tabItem { Label("Protection", systemImage: "shield") }
+                .tag(0)
+            
+            DomainsView(manager: manager)
+                .tabItem { Label("Blocked", systemImage: "list.bullet") }
+                .tag(1)
+        }
     }
 }
 
 @main
-struct TempleChatApp: App {
+struct AntiRevokeApp: App {
     var body: some Scene {
         WindowGroup {
-            ChatView()
+            ContentView()
         }
-    }
-}
-
-class ChatViewModel: ObservableObject {
-    @Published var messages: [Message] = []
-    @Published var isConnected = false
-    @Published var connectionError: String?
-    
-    private var socket: URLSessionWebSocketTask?
-    private var username = "Anon"
-    
-    func setUsername(_ name: String) {
-        username = name
-    }
-    
-    func connect() {
-        guard let url = URL(string: "wss://temple-chat-backend.onrender.com/ws") else {
-            connectionError = "Invalid URL"
-            return
-        }
-        
-        let request = URLRequest(url: url)
-        socket = URLSession.shared.webSocketTask(with: request)
-        socket?.resume()
-        isConnected = true
-        connectionError = nil
-        
-        receiveMessages()
-    }
-    
-    func disconnect() {
-        socket?.cancel(with: .goingAway, reason: nil)
-        isConnected = false
-    }
-    
-    private func receiveMessages() {
-        socket?.receive { [weak self] result in
-            guard let self = self else { return }
-            
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let message):
-                    if case .string(let text) = message,
-                       let data = text.data(using: .utf8),
-                       let decodedMessage = try? JSONDecoder().decode(Message.self, from: data) {
-                        self.messages.append(decodedMessage)
-                    }
-                    self.receiveMessages()
-                    
-                case .failure(let error):
-                    print("Receive error: \(error)")
-                    self.isConnected = false
-                    self.connectionError = "Connection lost"
-                }
-            }
-        }
-    }
-    
-    func sendMessage(_ text: String) {
-        guard !text.isEmpty, isConnected else { return }
-        
-        let message = Message(
-            user: username,
-            text: text,
-            timestamp: Date()
-        )
-        
-        // Optimistic update
-        messages.append(message)
-        
-        do {
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            let jsonData = try encoder.encode(message)
-            guard let jsonString = String(data: jsonData, encoding: .utf8) else { return }
-            
-            socket?.send(.string(jsonString)) { error in
-                if let error = error {
-                    print("Send error: \(error)")
-                }
-            }
-        } catch {
-            print("Encode error: \(error)")
-        }
-    }
-}
-
-struct ChatView: View {
-    @StateObject private var viewModel = ChatViewModel()
-    @State private var newMessage = ""
-    @State private var showUsernamePrompt = true
-    @State private var username = "Anon"
-    
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 0) {
-                // Header
-                HStack {
-                    Text("Epsteins Kids Locked In His Temple")
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                    
-                    Spacer()
-                    
-                    // Connection status
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(viewModel.isConnected ? Color.green : Color.red)
-                            .frame(width: 8, height: 8)
-                        Text(viewModel.isConnected ? "Connected" : "Disconnected")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 12)
-                .background(Color(.systemGray6))
-                
-                // Messages
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 12) {
-                            ForEach(viewModel.messages) { message in
-                                MessageBubble(
-                                    message: message,
-                                    isCurrentUser: message.user == username
-                                )
-                                .id(message.id)
-                            }
-                        }
-                        .padding()
-                    }
-                    .onChange(of: viewModel.messages.count) { _ in
-                        if let last = viewModel.messages.last {
-                            withAnimation {
-                                proxy.scrollTo(last.id, anchor: .bottom)
-                            }
-                        }
-                    }
-                }
-                .background(Color(.systemBackground))
-                
-                // Connection error
-                if let error = viewModel.connectionError {
-                    HStack {
-                        Image(systemName: "exclamationmark.triangle")
-                        Text(error)
-                            .font(.caption)
-                        Spacer()
-                        Button("Retry") {
-                            viewModel.connect()
-                        }
-                        .font(.caption)
-                    }
-                    .padding(8)
-                    .background(Color.orange.opacity(0.2))
-                    .foregroundColor(.orange)
-                }
-                
-                // Input
-                VStack(spacing: 0) {
-                    Divider()
-                    HStack(spacing: 12) {
-                        TextField("Message...", text: $newMessage)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                            .onSubmit {
-                                sendMessage()
-                            }
-                        
-                        Button(action: sendMessage) {
-                            Image(systemName: "paperplane.fill")
-                                .font(.system(size: 18))
-                                .frame(width: 44, height: 44)
-                                .background(newMessage.isEmpty ? Color.gray : Color.blue)
-                                .foregroundColor(.white)
-                                .clipShape(Circle())
-                        }
-                        .disabled(newMessage.isEmpty || !viewModel.isConnected)
-                    }
-                    .padding(.horizontal)
-                    .padding(.vertical, 12)
-                    .background(Color(.systemBackground))
-                }
-            }
-            .navigationBarHidden(true)
-        }
-        .onAppear {
-            viewModel.connect()
-        }
-        .onDisappear {
-            viewModel.disconnect()
-        }
-        .alert("Enter Name", isPresented: $showUsernamePrompt) {
-            TextField("Username", text: $username)
-            Button("OK") {
-                showUsernamePrompt = false
-                viewModel.setUsername(username)
-            }
-        }
-    }
-    
-    private func sendMessage() {
-        let messageText = newMessage.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !messageText.isEmpty else { return }
-        
-        viewModel.sendMessage(messageText)
-        newMessage = ""
     }
 }
